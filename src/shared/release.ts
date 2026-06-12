@@ -1,6 +1,9 @@
-// shared/release.ts — pure helpers for the assisted updater: semver compare and
-// turning a GitHub `releases/latest` payload into an UpdateInfo. No node/electron
-// imports, so this is unit-testable under vitest like the rest of src/shared.
+// shared/release.ts — pure helpers for the assisted updater. We read the public
+// `releases.atom` feed (github.com) rather than the REST API (api.github.com),
+// because the unauthenticated REST API is rate-limited to 60 req/hr per IP — easily
+// exhausted behind a shared/corporate NAT (it returns 403). The atom feed isn't
+// subject to that limit. Asset URLs are derived deterministically from the tag, so
+// no API call is needed. No node/electron imports → unit-testable under vitest.
 import type { UpdateInfo } from './types'
 
 /** Strip a leading "v" and parse "X.Y.Z" into numeric parts (pre-release suffix ignored). */
@@ -32,67 +35,89 @@ export function isNewer(latest: string, current: string): boolean {
   return compareSemver(latest, current) > 0
 }
 
-/** Minimal shape of a GitHub release asset we care about. */
-export type ReleaseAsset = {
-  name: string
-  browser_download_url: string
-}
-
-/** Minimal shape of the GitHub `releases/latest` payload we read. */
-export type GithubRelease = {
-  tag_name?: string
-  name?: string
-  html_url?: string
-  body?: string
-  draft?: boolean
-  prerelease?: boolean
-  assets?: ReleaseAsset[]
-}
-
 /** Node's process.arch values we ship DMGs for. */
 export type AppArch = 'arm64' | 'x64'
 
-/**
- * Pick the .dmg asset matching the running architecture. DMGs are named
- * `Loop-<version>-<arch>.dmg` (see config/electron-builder.config.cjs), so we
- * match on the `-<arch>.dmg` suffix.
- */
-export function pickDmgAsset(
-  assets: ReleaseAsset[] | undefined,
-  arch: AppArch
-): ReleaseAsset | null {
-  if (!assets) {
-    return null
-  }
-  const suffix = `-${arch}.dmg`
-  return assets.find((a) => a.name.toLowerCase().endsWith(suffix)) ?? null
+/** A release entry parsed out of the GitHub releases.atom feed. */
+export type AtomRelease = {
+  /** Git tag, e.g. "v0.1.4". */
+  tag: string
+  /** Tag without the leading "v", e.g. "0.1.4". */
+  version: string
+  /** Release page URL (…/releases/tag/<tag>). */
+  releaseUrl: string
 }
 
 /**
- * Build an UpdateInfo from a raw GitHub release payload. `available` is true only
- * when the release's version is strictly newer than `currentVersion` AND a DMG
- * for `arch` exists. `checkedAt` must be supplied by the caller (main passes an
- * ISO timestamp) so this stays pure/deterministic for tests.
+ * Parse the GitHub releases.atom feed. Each release shows up as a
+ * `<link … href="https://github.com/<owner>/<repo>/releases/tag/<tag>"/>`; we pull
+ * the tag out of those hrefs (more reliable than the human `<title>`).
  */
-export function parseLatestRelease(
-  release: GithubRelease,
+export function parseReleasesAtom(xml: string): AtomRelease[] {
+  const out: AtomRelease[] = []
+  const seen = new Set<string>()
+  const re = /href="([^"]*\/releases\/tag\/([^"]+))"/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    const releaseUrl = m[1]
+    const tag = decodeURIComponent(m[2])
+    if (seen.has(tag)) {
+      continue
+    }
+    seen.add(tag)
+    out.push({ tag, version: tag.replace(/^v/i, ''), releaseUrl })
+  }
+  return out
+}
+
+/** Pick the highest-versioned release (atom order isn't guaranteed to be sorted). */
+export function pickLatestRelease(releases: AtomRelease[]): AtomRelease | null {
+  return releases.reduce<AtomRelease | null>((best, r) => {
+    return !best || compareSemver(r.version, best.version) > 0 ? r : best
+  }, null)
+}
+
+/** DMG filename for a version + arch — matches config/electron-builder.config.cjs artifactName. */
+export function dmgAssetName(version: string, arch: AppArch): string {
+  return `Loop-${version}-${arch}.dmg`
+}
+
+/**
+ * Build an UpdateInfo from the latest atom release. `available` is true only when
+ * the release is strictly newer than `currentVersion`. The .dmg download URL is
+ * derived from the release tag URL (…/releases/tag/<tag> → …/releases/download/
+ * <tag>/<assetName>), which 302-redirects to the signed asset CDN. `checkedAt` is
+ * supplied by the caller so this stays pure/deterministic for tests.
+ */
+export function buildUpdateInfo(
+  latest: AtomRelease | null,
   currentVersion: string,
   arch: AppArch,
   checkedAt: string
 ): UpdateInfo {
-  const latestVersion = release.tag_name?.replace(/^v/i, '') ?? null
-  const asset = pickDmgAsset(release.assets, arch)
-  const available = Boolean(
-    latestVersion && !release.draft && isNewer(latestVersion, currentVersion) && asset
-  )
+  if (!latest) {
+    return {
+      currentVersion,
+      latestVersion: null,
+      available: false,
+      releaseUrl: null,
+      assetUrl: null,
+      assetName: null,
+      notes: null,
+      checkedAt
+    }
+  }
+  const available = isNewer(latest.version, currentVersion)
+  const assetName = dmgAssetName(latest.version, arch)
+  const assetUrl = `${latest.releaseUrl.replace('/releases/tag/', '/releases/download/')}/${assetName}`
   return {
     currentVersion,
-    latestVersion,
+    latestVersion: latest.version,
     available,
-    releaseUrl: release.html_url ?? null,
-    assetUrl: asset?.browser_download_url ?? null,
-    assetName: asset?.name ?? null,
-    notes: release.body ?? null,
+    releaseUrl: latest.releaseUrl,
+    assetUrl,
+    assetName,
+    notes: null,
     checkedAt
   }
 }

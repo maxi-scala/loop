@@ -2,10 +2,31 @@ import { describe, it, expect } from 'vitest'
 import {
   compareSemver,
   isNewer,
-  pickDmgAsset,
-  parseLatestRelease,
-  type GithubRelease
+  parseReleasesAtom,
+  pickLatestRelease,
+  dmgAssetName,
+  buildUpdateInfo,
+  type AtomRelease
 } from '@shared/release'
+
+// Trimmed, structurally-faithful sample of github.com/<owner>/<repo>/releases.atom.
+const ATOM = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Release notes from loop</title>
+  <updated>2026-06-12T16:22:59Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v0.1.4</id>
+    <updated>2026-06-12T16:25:03Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/maxi-scala/loop/releases/tag/v0.1.4"/>
+    <title>v0.1.4</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v0.1.3</id>
+    <updated>2026-06-12T15:16:23Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/maxi-scala/loop/releases/tag/v0.1.3"/>
+    <title>v0.1.3</title>
+  </entry>
+</feed>`
 
 describe('compareSemver / isNewer', () => {
   it('treats equal versions as equal', () => {
@@ -30,60 +51,74 @@ describe('compareSemver / isNewer', () => {
   })
 })
 
-describe('pickDmgAsset', () => {
-  const assets = [
-    { name: 'Loop-0.2.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg' },
-    { name: 'Loop-0.2.0-x64.dmg', browser_download_url: 'https://x/x64.dmg' }
-  ]
-
-  it('matches the running architecture by filename suffix', () => {
-    expect(pickDmgAsset(assets, 'arm64')?.browser_download_url).toBe('https://x/arm64.dmg')
-    expect(pickDmgAsset(assets, 'x64')?.browser_download_url).toBe('https://x/x64.dmg')
+describe('parseReleasesAtom', () => {
+  it('extracts tags + release URLs from the feed', () => {
+    const releases = parseReleasesAtom(ATOM)
+    expect(releases).toEqual([
+      {
+        tag: 'v0.1.4',
+        version: '0.1.4',
+        releaseUrl: 'https://github.com/maxi-scala/loop/releases/tag/v0.1.4'
+      },
+      {
+        tag: 'v0.1.3',
+        version: '0.1.3',
+        releaseUrl: 'https://github.com/maxi-scala/loop/releases/tag/v0.1.3'
+      }
+    ])
   })
 
-  it('returns null when no DMG matches', () => {
-    expect(pickDmgAsset([{ name: 'notes.txt', browser_download_url: 'u' }], 'arm64')).toBeNull()
-    expect(pickDmgAsset(undefined, 'arm64')).toBeNull()
+  it('returns an empty array when there are no releases', () => {
+    expect(parseReleasesAtom('<feed><title>none</title></feed>')).toEqual([])
   })
 })
 
-describe('parseLatestRelease', () => {
-  const release: GithubRelease = {
-    tag_name: 'v0.2.0',
-    html_url: 'https://github.com/maxi-scala/loop/releases/tag/v0.2.0',
-    body: 'release notes',
-    assets: [
-      { name: 'Loop-0.2.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg' },
-      { name: 'Loop-0.2.0-x64.dmg', browser_download_url: 'https://x/x64.dmg' }
+describe('pickLatestRelease', () => {
+  it('returns the highest-versioned release regardless of feed order', () => {
+    const releases: AtomRelease[] = [
+      { tag: 'v0.1.3', version: '0.1.3', releaseUrl: 'u3' },
+      { tag: 'v0.10.0', version: '0.10.0', releaseUrl: 'u10' },
+      { tag: 'v0.9.0', version: '0.9.0', releaseUrl: 'u9' }
     ]
-  }
+    expect(pickLatestRelease(releases)?.version).toBe('0.10.0')
+  })
+
+  it('returns null for an empty list', () => {
+    expect(pickLatestRelease([])).toBeNull()
+  })
+})
+
+describe('dmgAssetName', () => {
+  it('matches the electron-builder artifactName', () => {
+    expect(dmgAssetName('0.1.4', 'arm64')).toBe('Loop-0.1.4-arm64.dmg')
+    expect(dmgAssetName('0.1.4', 'x64')).toBe('Loop-0.1.4-x64.dmg')
+  })
+})
+
+describe('buildUpdateInfo', () => {
+  const latest = pickLatestRelease(parseReleasesAtom(ATOM))
   const at = '2026-06-12T00:00:00.000Z'
 
-  it('reports available when newer and a matching DMG exists', () => {
-    const info = parseLatestRelease(release, '0.1.3', 'arm64', at)
+  it('reports available and derives the .dmg download URL from the tag', () => {
+    const info = buildUpdateInfo(latest, '0.1.3', 'arm64', at)
     expect(info.available).toBe(true)
-    expect(info.latestVersion).toBe('0.2.0')
-    expect(info.assetUrl).toBe('https://x/arm64.dmg')
-    expect(info.assetName).toBe('Loop-0.2.0-arm64.dmg')
-    expect(info.releaseUrl).toBe(release.html_url)
-    expect(info.notes).toBe('release notes')
+    expect(info.latestVersion).toBe('0.1.4')
+    expect(info.releaseUrl).toBe('https://github.com/maxi-scala/loop/releases/tag/v0.1.4')
+    expect(info.assetName).toBe('Loop-0.1.4-arm64.dmg')
+    expect(info.assetUrl).toBe(
+      'https://github.com/maxi-scala/loop/releases/download/v0.1.4/Loop-0.1.4-arm64.dmg'
+    )
     expect(info.checkedAt).toBe(at)
   })
 
   it('is not available when current version is the latest', () => {
-    expect(parseLatestRelease(release, '0.2.0', 'arm64', at).available).toBe(false)
+    expect(buildUpdateInfo(latest, '0.1.4', 'arm64', at).available).toBe(false)
   })
 
-  it('is not available when no DMG matches the architecture', () => {
-    const noAssets: GithubRelease = { ...release, assets: [] }
-    const info = parseLatestRelease(noAssets, '0.1.3', 'arm64', at)
+  it('handles no releases', () => {
+    const info = buildUpdateInfo(null, '0.1.3', 'arm64', at)
     expect(info.available).toBe(false)
+    expect(info.latestVersion).toBeNull()
     expect(info.assetUrl).toBeNull()
-  })
-
-  it('is not available for a draft release', () => {
-    expect(parseLatestRelease({ ...release, draft: true }, '0.1.3', 'arm64', at).available).toBe(
-      false
-    )
   })
 })

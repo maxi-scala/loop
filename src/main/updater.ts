@@ -7,11 +7,19 @@ import { join } from 'path'
 import { app, net, shell, BrowserWindow } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { UpdateStatus } from '@shared/types'
-import { parseLatestRelease, type AppArch, type GithubRelease } from '@shared/release'
+import {
+  parseReleasesAtom,
+  pickLatestRelease,
+  buildUpdateInfo,
+  type AppArch
+} from '@shared/release'
 
 const OWNER = 'maxi-scala'
 const REPO = 'loop'
-const LATEST_URL = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`
+// The public atom feed (github.com), NOT the REST API (api.github.com): the
+// unauthenticated REST API is rate-limited to 60 req/hr per IP and returns 403
+// once exhausted (common behind a shared/corporate NAT). The atom feed isn't.
+const FEED_URL = `https://github.com/${OWNER}/${REPO}/releases.atom`
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6h
 const FIRST_CHECK_DELAY_MS = 8 * 1000 // let the window settle before the first check
 
@@ -45,7 +53,7 @@ function fetchText(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const request = net.request(url)
     request.setHeader('User-Agent', `Loop/${app.getVersion()}`)
-    request.setHeader('Accept', 'application/vnd.github+json')
+    request.setHeader('Accept', 'application/atom+xml')
     request.on('response', (response) => {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         // Drain so the socket frees, then reject.
@@ -63,15 +71,15 @@ function fetchText(url: string): Promise<string> {
 }
 
 /**
- * Check the GitHub Releases feed. Never throws — failures land in phase 'error'
- * so a background check stays silent and the UI can show a message on demand.
+ * Check the GitHub releases.atom feed. Never throws — failures land in phase
+ * 'error' so a background check stays silent and the UI can show a message on demand.
  */
 export async function checkForUpdate(): Promise<UpdateStatus> {
   setStatus({ phase: 'checking', info: current.info })
   try {
-    const body = await fetchText(LATEST_URL)
-    const release = JSON.parse(body) as GithubRelease
-    const info = parseLatestRelease(release, app.getVersion(), appArch(), new Date().toISOString())
+    const xml = await fetchText(FEED_URL)
+    const latest = pickLatestRelease(parseReleasesAtom(xml))
+    const info = buildUpdateInfo(latest, app.getVersion(), appArch(), new Date().toISOString())
     setStatus({ phase: info.available ? 'available' : 'idle', info })
   } catch (e) {
     setStatus({ phase: 'error', info: current.info, error: String(e) })
