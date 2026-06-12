@@ -436,12 +436,24 @@ button { font-family: inherit; color: inherit; background: none; border: none; c
 
 /* ══ loop additions: adapt the prototype to a real Electron window ══════════ */
 /* The real app fills the OS window (no faux desktop chrome). The OS draws the
-   traffic lights via titleBarStyle:hiddenInset; we reserve a draggable strip. */
-.app-root { height: 100vh; display: flex; flex-direction: column; background: var(--bg-window); }
-.titlebar-drag { height: 30px; flex-shrink: 0; -webkit-app-region: drag; width: 100%; }
-.app-body { flex: 1; display: flex; min-height: 0; }
-.app-body .sidebar { -webkit-app-region: no-drag; }
-button, a, input, textarea, select, .nav-item, .rt-row, .rt-card, .tbl tbody tr { -webkit-app-region: no-drag; }
+   traffic lights via titleBarStyle:hiddenInset over the top-left; we reserve a
+   draggable strip at the top of the sidebar for them, plus a draggable top bar
+   over the content area for the quick-status pill. */
+.app-root { height: 100vh; display: flex; flex-direction: row; background: var(--bg-window); overflow: hidden; }
+.sidebar { -webkit-app-region: no-drag; }
+/* traffic-light clearance + drag handle at the very top of the sidebar */
+.sidebar-drag { height: 38px; flex-shrink: 0; -webkit-app-region: drag; }
+.main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  height: 38px; flex-shrink: 0; position: relative;
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-window);
+}
+.content { flex: 1; overflow-y: auto; min-width: 0; }
+/* interactive elements must opt out of the drag region */
+button, a, input, textarea, select, .nav-item, .rt-row, .rt-card, .tbl tbody tr,
+.mb-status, .mb-panel { -webkit-app-region: no-drag; }
 .settings-section { margin-bottom: 22px; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
 .settings-row:last-child { border-bottom: none; }

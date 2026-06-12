@@ -79,51 +79,55 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="app-root" style={appVars}>
-      <div className="titlebar-drag">
-        <MenuBar nav={nav} now={now} />
-      </div>
-      <div className="app-body">
-        <div className="sidebar">
-          <div className="sidebar-brand">
-            <span className="sidebar-brand-mark">
-              <Icon name="spark" size={15} />
+      <div className="sidebar">
+        {/* Draggable strip that hosts the macOS traffic lights (top-left of window). */}
+        <div className="sidebar-drag" />
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-mark">
+            <Icon name="spark" size={15} />
+          </span>
+          <div>
+            <div className="sidebar-brand-name">Loop</div>
+            <div className="sidebar-brand-sub mono">for Claude Code</div>
+          </div>
+        </div>
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className={'nav-item' + (n.match.includes(view.screen) ? ' active' : '')}
+              onClick={() => setView({ screen: n.id } as View)}
+            >
+              <Icon name={n.icon} size={15} />
+              {n.label}
+              {n.id === 'history' && running > 0 ? (
+                <span className="nav-badge mono">{running}</span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-spacer" />
+        <div className="sidebar-foot mono">
+          {settings.pausedAll ? (
+            <span className="sf-line">all paused</span>
+          ) : running > 0 ? (
+            <span className="sf-line" style={{ color: 'var(--accent)' }}>
+              {running} running
             </span>
-            <div>
-              <div className="sidebar-brand-name">Loop</div>
-              <div className="sidebar-brand-sub mono">for Claude Code</div>
-            </div>
-          </div>
-          <nav className="sidebar-nav">
-            {NAV_ITEMS.map((n) => (
-              <button
-                key={n.id}
-                type="button"
-                className={'nav-item' + (n.match.includes(view.screen) ? ' active' : '')}
-                onClick={() => setView({ screen: n.id } as View)}
-              >
-                <Icon name={n.icon} size={15} />
-                {n.label}
-                {n.id === 'history' && running > 0 ? (
-                  <span className="nav-badge mono">{running}</span>
-                ) : null}
-              </button>
-            ))}
-          </nav>
-          <div className="sidebar-spacer" />
-          <div className="sidebar-foot mono">
-            {settings.pausedAll ? (
-              <span className="sf-line">all paused</span>
-            ) : running > 0 ? (
-              <span className="sf-line" style={{ color: 'var(--accent)' }}>
-                {running} running
-              </span>
-            ) : (
-              <span className="sf-line">idle</span>
-            )}
-            {nextAll && !settings.pausedAll ? (
-              <span className="sf-line dim">next {relUntil(nextAll, now)}</span>
-            ) : null}
-          </div>
+          ) : (
+            <span className="sf-line">idle</span>
+          )}
+          {nextAll && !settings.pausedAll ? (
+            <span className="sf-line dim">next {relUntil(nextAll, now)}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="main-col">
+        {/* Draggable top bar across the content area; hosts the quick-status pill. */}
+        <div className="topbar">
+          <MenuBar nav={nav} now={now} />
         </div>
         <div className="content">{screen}</div>
       </div>

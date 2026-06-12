@@ -27,7 +27,7 @@ export function createMainWindow(): BrowserWindow {
     title: 'Loop',
     backgroundColor: '#21201c',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 18 } : undefined,
+    trafficLightPosition: process.platform === 'darwin' ? { x: 18, y: 13 } : undefined,
     ...(process.platform === 'darwin' ? { vibrancy: 'under-window' as const } : {}),
     autoHideMenuBar: true,
     webPreferences: {
