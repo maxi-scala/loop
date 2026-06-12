@@ -276,7 +276,10 @@ export function runClaude(
       }
       const durationSec = Math.round((Date.now() - startedAt) / 1000)
       const failed = timedOut || isError || (code !== 0 && code !== null)
-      let summary = finalSummary.replace(/\s+/g, ' ').trim()
+      // Preserve the result's Markdown structure (newlines, lists) for the run-detail
+      // view, which renders it as Markdown; only cap runs of blank lines. List previews
+      // collapse it to one line via CSS (white-space: nowrap).
+      let summary = finalSummary.replace(/\n{3,}/g, '\n\n').trim()
       if (timedOut && !summary) {
         summary = `Timed out after ${Math.round((opts.timeoutMs ?? 0) / 60000)} minutes.`
       }
