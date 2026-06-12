@@ -58,7 +58,8 @@ export function HistoryScreen({ nav }: ScreenProps): React.JSX.Element {
           options={[
             { value: 'all', label: 'All' },
             { value: 'success', label: 'Success' },
-            { value: 'failed', label: 'Failed' }
+            { value: 'failed', label: 'Failed' },
+            { value: 'skipped', label: 'Skipped' }
           ]}
         />
       </ScreenHead>

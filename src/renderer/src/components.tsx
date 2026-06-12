@@ -13,6 +13,7 @@ export const STATUS_META: Record<string, { color: string; label: string }> = {
   success: { color: 'var(--green)', label: 'success' },
   failed: { color: 'var(--red)', label: 'failed' },
   running: { color: 'var(--accent)', label: 'running' },
+  skipped: { color: 'var(--text-3)', label: 'skipped' },
   paused: { color: 'var(--text-3)', label: 'paused' },
   scheduled: { color: 'var(--text-3)', label: 'scheduled' }
 }

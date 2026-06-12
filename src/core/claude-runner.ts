@@ -7,8 +7,9 @@ import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import type { Change, ModelId, Run, TranscriptEntry } from '@shared/types'
+import type { Change, ModelId, PermissionMode, Run, TranscriptEntry } from '@shared/types'
 import { expandHome } from './paths'
+import { type StreamEvent, summarizeToolArg, deriveChange, sumTokens } from './claude-stream'
 
 export type RunCallbacks = {
   /** Called whenever a new transcript entry is produced. */
@@ -59,85 +60,6 @@ function buildEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: merged }
 }
 
-function summarizeToolArg(name: string, input: unknown): string {
-  if (input == null) {
-    return ''
-  }
-  const obj = input as Record<string, unknown>
-  if (typeof obj.command === 'string') {
-    return obj.command
-  }
-  if (typeof obj.file_path === 'string') {
-    return obj.file_path
-  }
-  if (typeof obj.path === 'string') {
-    return obj.path
-  }
-  if (typeof obj.pattern === 'string') {
-    return obj.pattern
-  }
-  if (typeof obj.url === 'string') {
-    return obj.url
-  }
-  try {
-    const s = JSON.stringify(obj)
-    return s.length > 120 ? `${s.slice(0, 117)}…` : s
-  } catch {
-    return String(name)
-  }
-}
-
-/** Heuristically derive "changes" (files edited, commits, PRs) from tool usage. */
-function deriveChange(name: string, arg: string): Change | null {
-  const lower = name.toLowerCase()
-  if (lower === 'edit' || lower === 'write' || lower === 'multiedit' || lower === 'notebookedit') {
-    return { t: 'edit', x: arg }
-  }
-  if (lower === 'bash') {
-    if (/gh\s+pr\s+create/.test(arg)) {
-      return { t: 'pr', x: 'PR opened' }
-    }
-    if (/git\s+commit/.test(arg)) {
-      return { t: 'commit', x: arg.replace(/^.*git\s+commit\s*/, 'commit ') }
-    }
-    if (/gh\s+issue\s+create/.test(arg)) {
-      return { t: 'pr', x: 'Issue opened' }
-    }
-    if (/gh\s+issue\s+edit/.test(arg)) {
-      return { t: 'label', x: arg }
-    }
-  }
-  return null
-}
-
-type StreamEvent = {
-  type?: string
-  subtype?: string
-  message?: { content?: Record<string, unknown>[] }
-  result?: string
-  total_cost_usd?: number
-  duration_ms?: number
-  is_error?: boolean
-  usage?: {
-    input_tokens?: number
-    output_tokens?: number
-    cache_read_input_tokens?: number
-    cache_creation_input_tokens?: number
-  }
-}
-
-function sumTokens(usage: StreamEvent['usage']): number | null {
-  if (!usage) {
-    return null
-  }
-  return (
-    (usage.input_tokens || 0) +
-    (usage.output_tokens || 0) +
-    (usage.cache_read_input_tokens || 0) +
-    (usage.cache_creation_input_tokens || 0)
-  )
-}
-
 const MODEL_FLAG: Record<ModelId, string> = {
   sonnet: 'sonnet',
   opus: 'opus',
@@ -145,11 +67,33 @@ const MODEL_FLAG: Record<ModelId, string> = {
 }
 
 /**
+ * CLI flags for a permission mode. Routines run unattended, so the default 'bypass'
+ * skips prompts entirely; otherwise a tool needing approval would be denied (or stall)
+ * because there is no TTY to answer on.
+ */
+export function permissionArgs(mode: PermissionMode): string[] {
+  switch (mode) {
+    case 'bypass':
+      return ['--dangerously-skip-permissions']
+    case 'acceptEdits':
+      return ['--permission-mode', 'acceptEdits']
+    case 'default':
+      return ['--permission-mode', 'default']
+  }
+}
+
+/**
  * Run a routine's prompt through the Claude CLI. Resolves when the process exits.
  * Streams transcript entries via callbacks as they arrive.
  */
 export function runClaude(
-  opts: { prompt: string; dir: string; model: ModelId },
+  opts: {
+    prompt: string
+    dir: string
+    model: ModelId
+    permissionMode?: PermissionMode
+    timeoutMs?: number
+  },
   cb: RunCallbacks = {}
 ): Promise<RunResult> {
   return new Promise<RunResult>((resolve) => {
@@ -187,7 +131,8 @@ export function runClaude(
       'stream-json',
       '--verbose',
       '--model',
-      MODEL_FLAG[opts.model] || 'sonnet'
+      MODEL_FLAG[opts.model] || 'sonnet',
+      ...permissionArgs(opts.permissionMode ?? 'bypass')
     ]
 
     let child
@@ -213,6 +158,38 @@ export function runClaude(
     let costUsd: number | null = null
     let tokens: number | null = null
     let isError = false
+    let timedOut = false
+
+    // Nothing ever writes to the child's stdin; close it so a CLI that tries to read
+    // a prompt answer gets EOF immediately instead of blocking forever.
+    child.stdin?.end()
+
+    // Hard ceiling on a single run. Without this a hung CLI (e.g. one that stalls on a
+    // permission prompt in a non-bypass mode) would only be cleaned up by the 2h stale
+    // sweep. SIGTERM first, then SIGKILL if it ignores us.
+    let timer: NodeJS.Timeout | null = null
+    if (opts.timeoutMs && opts.timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true
+        push({
+          role: 'result',
+          text: `Run timed out after ${Math.round(opts.timeoutMs! / 60000)}m`,
+          err: true
+        })
+        try {
+          child.kill('SIGTERM')
+        } catch {
+          /* already gone */
+        }
+        setTimeout(() => {
+          try {
+            child.kill('SIGKILL')
+          } catch {
+            /* already gone */
+          }
+        }, 5000)
+      }, opts.timeoutMs)
+    }
 
     const handleEvent = (evt: StreamEvent): void => {
       if (evt.type === 'assistant' && evt.message?.content) {
@@ -290,12 +267,19 @@ export function runClaude(
     })
 
     const finish = (code: number | null): void => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       if (buffer.trim()) {
         processLine(buffer)
       }
       const durationSec = Math.round((Date.now() - startedAt) / 1000)
-      const failed = isError || (code !== 0 && code !== null)
+      const failed = timedOut || isError || (code !== 0 && code !== null)
       let summary = finalSummary.replace(/\s+/g, ' ').trim()
+      if (timedOut && !summary) {
+        summary = `Timed out after ${Math.round((opts.timeoutMs ?? 0) / 60000)} minutes.`
+      }
       if (failed && !summary) {
         summary = stderr.trim().split('\n').slice(-3).join(' ').slice(0, 240) || 'Run failed.'
         push({ role: 'result', text: summary || `claude exited with code ${code}`, err: true })

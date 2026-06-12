@@ -63,7 +63,10 @@ export const defaultTweaks: Tweaks = {
 
 export const defaultSettings: Settings = {
   daemonEnabled: false,
-  pausedAll: false
+  pausedAll: false,
+  defaultPermissionMode: 'bypass',
+  defaultMissedRunGraceMinutes: 720,
+  runTimeoutMinutes: 60
 }
 
 export const APP_DATA_VERSION = 1
