@@ -295,7 +295,10 @@ export function runClaude(
       }
       const durationSec = Math.round((Date.now() - startedAt) / 1000)
       const failed = isError || (code !== 0 && code !== null)
-      let summary = finalSummary.replace(/\s+/g, ' ').trim()
+      // Preserve the result's Markdown structure (newlines, lists) for the run-detail
+      // view, which renders it as Markdown; only cap runs of blank lines. List previews
+      // collapse it to one line via CSS (white-space: nowrap).
+      let summary = finalSummary.replace(/\n{3,}/g, '\n\n').trim()
       if (failed && !summary) {
         summary = stderr.trim().split('\n').slice(-3).join(' ').slice(0, 240) || 'Run failed.'
         push({ role: 'result', text: summary || `claude exited with code ${code}`, err: true })
