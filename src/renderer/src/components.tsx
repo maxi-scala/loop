@@ -4,6 +4,7 @@ import type { RunStatus, Change, TranscriptEntry, Run, ModelId } from '@shared/t
 import { MODELS } from '@shared/schedule'
 import { fmtDur, fmtCost, fmtTokens } from '@shared/format'
 import { Icon, type IconName } from './lib/icons'
+import { Markdown } from './Markdown'
 
 export { Icon }
 export type { IconName }
@@ -227,7 +228,9 @@ export function Transcript({ entries }: { entries: TranscriptEntry[] }): React.J
               <span className="tr-mark" style={{ color: 'var(--accent)' }}>
                 ⏺
               </span>
-              <span className="tr-text">{e.text}</span>
+              <div className="tr-text">
+                <Markdown text={e.text || ''} />
+              </div>
             </div>
           )
         }
