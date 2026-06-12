@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in Loop isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a routine with schedule "..."
+        2. ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Loop version
+      placeholder: e.g. v0.1.1 (see About / the DMG name)
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: e.g. 15.1 (Apple Silicon / Intel)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / transcript
+      description: If a routine run failed, paste its transcript or the daemon log (~/Library/Application Support/loop/daemon.log). No secrets.
+      render: text

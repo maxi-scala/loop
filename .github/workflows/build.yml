@@ -1,53 +1,81 @@
-name: Build macOS
+name: CI
 
 on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
-# Signing & notarization are intentionally DISABLED for CI: the produced .dmg
-# is unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false + mac.identity:null in the
-# electron-builder config). Users will need to right-click > Open on first run.
-jobs:
-  build-macos:
-    name: Build macOS DMG
-    runs-on: macos-14 # Apple Silicon runner
-    permissions:
-      contents: write # needed for creating releases on tag pushes
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+# Cancel superseded runs on the same ref — except tag builds (releases must finish).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+jobs:
+  verify:
+    name: Lint · Typecheck · Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
-
+      # The Electron binary isn't needed to lint/typecheck/test (vitest runs on jsdom),
+      # and downloading it on Linux just wastes time.
       - name: Install dependencies
         run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test
 
+  build-macos:
+    name: Build macOS DMG
+    needs: verify
+    # Skip the (slower, paid) macOS packaging job on PRs — it runs on main pushes,
+    # tags, and manual dispatch.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14 # Apple Silicon
+    permissions:
+      contents: write # create releases on tag pushes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-builder-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-
+      - name: Install dependencies
+        run: npm ci
       - name: Build
         run: npm run build
-
       - name: Test
         run: npm run test
-
+      # Not signed with a Developer ID or notarized (no cert in CI). electron-builder
+      # still ad-hoc signs the arm64 app so it launches; downloaded copies need a
+      # right-click > Open (or `xattr -dr com.apple.quarantine`). See BUILD.md.
       - name: Package macOS DMG (unsigned)
         run: npx electron-builder --mac --config config/electron-builder.config.cjs --publish never
         env:
-          # Skip code signing in CI — produce an unsigned build.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: loop-dmg
           path: dist/*.dmg
           if-no-files-found: error
-
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
