@@ -5,7 +5,7 @@
 // launchd plist + install flow; this entry is the long-running process that plist invokes.
 import { appendFileSync } from 'fs'
 import { Store } from '@core/persistence'
-import { Scheduler } from '@core/scheduler'
+import { Scheduler, STALE_RUN_MS } from '@core/scheduler'
 import { logFile } from '@core/paths'
 
 function log(msg: string): void {
@@ -22,6 +22,8 @@ function log(msg: string): void {
 function main(): void {
   log('loop daemon starting')
   const store = new Store()
+  const cleaned = store.reconcileStaleRuns(STALE_RUN_MS)
+  if (cleaned) log(`reconciled ${cleaned} stale running run(s)`)
   const scheduler = new Scheduler(store, { log })
   scheduler.start()
 

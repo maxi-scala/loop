@@ -33,6 +33,10 @@ export interface LoopApi {
     /** Bring the main window to the front (used by the tray). */
     openWindow: () => Promise<void>
   }
+  dialog: {
+    /** Open a native folder picker; resolves to the chosen absolute path, or null if cancelled. */
+    selectDirectory: () => Promise<string | null>
+  }
   /** Subscribe to "data changed on disk / by another process" pushes. Returns an unsubscribe fn. */
   onDataChanged: (cb: (data: AppData) => void) => () => void
 }

@@ -39,7 +39,7 @@ export function Editor({
 
   const [name, setName] = React.useState(routine ? routine.name : '')
   const [prompt, setPrompt] = React.useState(routine ? routine.prompt : '')
-  const [dir, setDir] = React.useState(routine ? routine.dir : '~/work/')
+  const [dir, setDir] = React.useState(routine ? routine.dir : '~')
   const [model, setModel] = React.useState<ModelId>(routine ? routine.model : 'sonnet')
   const [schedule, setSchedule] = React.useState<Schedule>(
     routine
@@ -90,7 +90,7 @@ export function Editor({
     const edits = {
       name: name.trim(),
       prompt: prompt.trim(),
-      dir: dir.trim() || '~/',
+      dir: dir.trim() || '~',
       model,
       schedule
     }
@@ -111,6 +111,11 @@ export function Editor({
   }, [onClose])
 
   const modelDesc = MODELS.find((m) => m.id === model)?.desc
+
+  const chooseDir = async (): Promise<void> => {
+    const picked = await window.api.dialog.selectDirectory()
+    if (picked) setDir(picked)
+  }
 
   return (
     <div
@@ -264,6 +269,14 @@ export function Editor({
                   value={dir}
                   onChange={(e) => setDir(e.target.value)}
                 />
+                <button
+                  type="button"
+                  className="link-btn mono"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => void chooseDir()}
+                >
+                  Browse…
+                </button>
               </div>
             </label>
             <div className="field" style={{ flex: 1 }}>

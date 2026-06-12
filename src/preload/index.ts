@@ -34,6 +34,9 @@ const api: LoopApi = {
   app: {
     openWindow: () => ipcRenderer.invoke(IPC.openWindow)
   },
+  dialog: {
+    selectDirectory: () => ipcRenderer.invoke(IPC.selectDirectory)
+  },
   onDataChanged: (cb: (data: AppData) => void) => {
     const listener = (_event: unknown, data: AppData): void => cb(data)
     ipcRenderer.on(IPC.dataChanged, listener)

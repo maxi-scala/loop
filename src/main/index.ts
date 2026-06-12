@@ -4,12 +4,11 @@ import { watch, type FSWatcher } from 'fs'
 import { app, BrowserWindow } from 'electron'
 import { electronApp } from '@electron-toolkit/utils'
 import { Store } from '@core/persistence'
-import { Scheduler } from '@core/scheduler'
+import { Scheduler, STALE_RUN_MS } from '@core/scheduler'
 import { dataFile } from '@core/paths'
 import { createMainWindow, showMainWindow } from './window'
 import { registerIpcHandlers, broadcastData } from './ipc'
 import { createTray } from './tray'
-import { getDaemonStatus } from './launchd'
 
 let store: Store
 let scheduler: Scheduler | null = null
@@ -40,19 +39,14 @@ function startDataFileWatch(): void {
 }
 
 /**
- * Reconcile the in-app scheduler with the daemon state: run the in-app scheduler only
- * when the background daemon is not installed. Safe to call repeatedly — it is invoked
- * at startup and again after the daemon is toggled at runtime (via the IPC handlers) so
- * the change takes effect without restarting the app.
+ * Ensure the in-app scheduler is running. We run it whenever the app is open —
+ * even if the background daemon is also installed — so scheduled routines reliably
+ * fire while Loop is in front. Cross-process duplicate runs are prevented by the
+ * scheduledFor de-dup in the shared data file. The daemon only matters when the app
+ * is fully quit. Safe to call repeatedly (startup + after daemon toggles).
  */
 function reconcileScheduler(): void {
   if (!store) return
-  const { installed } = getDaemonStatus()
-  if (installed) {
-    scheduler?.stop()
-    scheduler = null
-    return
-  }
   if (scheduler) return
   scheduler = new Scheduler(store, {
     onFire: () => broadcast(),
@@ -71,6 +65,9 @@ if (!gotLock) {
     electronApp.setAppUserModelId('com.loop.routines')
 
     store = new Store()
+    // A run still marked "running" at startup belonged to a previous process that
+    // exited mid-run; fail it so it doesn't wedge the scheduler.
+    store.reconcileStaleRuns(STALE_RUN_MS)
     registerIpcHandlers({ store, broadcast, reconcileScheduler })
     createMainWindow()
     createTray({ store, showWindow: showMainWindow })

@@ -198,6 +198,27 @@ export class Store {
     })
   }
 
+  /**
+   * Fail any run still marked "running" but older than maxAgeMs. Such runs belong to a
+   * process that exited without finishing; left as-is they wedge the scheduler (which
+   * won't fire a routine that appears to be mid-run). Returns the number cleaned up.
+   */
+  reconcileStaleRuns(maxAgeMs: number): number {
+    return this.mutate((s) => {
+      const now = Date.now()
+      let count = 0
+      for (const r of s.runs) {
+        if (r.status === 'running' && now - new Date(r.start).getTime() >= maxAgeMs) {
+          r.status = 'failed'
+          r.durationSec = r.durationSec ?? Math.round((now - new Date(r.start).getTime()) / 1000)
+          r.summary = 'Run interrupted — Loop was restarted before it finished.'
+          count++
+        }
+      }
+      return count
+    })
+  }
+
   // ── settings / tweaks ──────────────────────────────────────
   setTweaks(patch: Partial<Tweaks>): Tweaks {
     return this.mutate((s) => {

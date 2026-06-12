@@ -12,6 +12,13 @@ import { runClaude, createRunningRun } from './claude-runner'
 const DEFAULT_TICK_MS = 60_000
 /** How late a scheduled occurrence may fire after its time before being skipped. */
 const GRACE_MS = 30 * 60 * 1000
+/**
+ * A run still marked "running" but older than this is considered dead (the process
+ * that owned it exited without finishing). Such runs must NOT block future scheduling,
+ * otherwise a single interrupted run wedges a routine forever (manual runs bypass this
+ * check, which is why "manual works but scheduled never fires" shows up).
+ */
+export const STALE_RUN_MS = 2 * 60 * 60 * 1000
 
 /** Find the most recent schedule occurrence at or before `now`, scanning back 14 days. */
 export function latestOccurrenceAtOrBefore(routine: Routine, now: Date): Date | null {
@@ -118,8 +125,14 @@ export class Scheduler {
     const runs = this.store.listRuns(routine.id)
     // Already satisfied this occurrence?
     if (runs.some((r) => r.scheduledFor === occIso)) return false
-    // Don't pile onto a currently-running run for this routine.
-    if (runs.some((r) => r.status === 'running')) return false
+    // Don't pile onto a run that is genuinely still in progress, but ignore stale
+    // "running" rows left behind by a crashed/quit process so they can't wedge us.
+    if (
+      runs.some(
+        (r) => r.status === 'running' && now.getTime() - new Date(r.start).getTime() < STALE_RUN_MS
+      )
+    )
+      return false
     return true
   }
 

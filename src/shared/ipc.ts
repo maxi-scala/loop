@@ -16,6 +16,7 @@ export const IPC = {
   daemonStatus: 'daemon:status',
   daemonInstall: 'daemon:install',
   daemonUninstall: 'daemon:uninstall',
+  selectDirectory: 'dialog:selectDirectory',
   openWindow: 'app:openWindow',
   // main → renderer push
   dataChanged: 'data:changed'

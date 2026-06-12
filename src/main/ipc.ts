@@ -1,5 +1,6 @@
 // main/ipc.ts — registers all ipcMain handlers and wires data-change broadcasts.
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { homedir } from 'os'
 import { IPC } from '@shared/ipc'
 import type { RoutineCreateInput } from '@shared/ipc'
 import type { Routine, Tweaks, Settings } from '@shared/types'
@@ -116,6 +117,20 @@ export function registerIpcHandlers({ store, broadcast, reconcileScheduler }: Ip
   })
 
   ipcMain.handle(IPC.openWindow, () => showMainWindow())
+
+  ipcMain.handle(IPC.selectDirectory, async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const properties: Array<'openDirectory' | 'createDirectory'> = [
+      'openDirectory',
+      'createDirectory'
+    ]
+    const opts = { title: 'Choose working directory', defaultPath: homedir(), properties }
+    const result = win
+      ? await dialog.showOpenDialog(win, opts)
+      : await dialog.showOpenDialog(opts)
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 }
 
 /** Push fresh AppData to every renderer window and refresh the tray. */
