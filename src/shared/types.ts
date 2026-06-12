@@ -3,6 +3,16 @@
 
 export type ModelId = 'sonnet' | 'opus' | 'haiku'
 
+/**
+ * How the headless `claude` run treats tool-permission prompts. Routines are
+ * unattended, so there is no one to answer a prompt — the mode is fixed at launch.
+ *  - 'bypass'      → --dangerously-skip-permissions (full auto; the default)
+ *  - 'acceptEdits' → --permission-mode acceptEdits (auto-accept file edits only)
+ *  - 'default'     → --permission-mode default (anything needing approval is denied;
+ *                    safest, but a routine that edits/commits may do nothing)
+ */
+export type PermissionMode = 'bypass' | 'acceptEdits' | 'default'
+
 export type ScheduleFreq = 'daily' | 'weekdays' | 'weekly' | 'hourly'
 
 /** Day-of-week index, 0 = Sunday … 6 = Saturday (matches Date.getDay()). */
@@ -27,9 +37,16 @@ export type Routine = {
   model: ModelId
   enabled: boolean
   schedule: Schedule
+  /** Per-routine permission mode. Undefined → inherit Settings.defaultPermissionMode. */
+  permissionMode?: PermissionMode
+  /**
+   * How late (minutes) a missed scheduled occurrence may still fire after the machine
+   * comes back online. Undefined → inherit Settings.defaultMissedRunGraceMinutes.
+   */
+  missedRunGraceMinutes?: number
 }
 
-export type RunStatus = 'running' | 'success' | 'failed'
+export type RunStatus = 'running' | 'success' | 'failed' | 'skipped'
 
 export type ChangeType = 'edit' | 'commit' | 'pr' | 'label'
 
@@ -84,6 +101,16 @@ export type Settings = {
   daemonEnabled: boolean
   /** Global pause — disables all scheduling without touching per-routine enabled flags. */
   pausedAll: boolean
+  /** Default permission mode for routines that don't override it. */
+  defaultPermissionMode: PermissionMode
+  /**
+   * Default missed-run grace (minutes) for routines that don't override it. A scheduled
+   * occurrence missed while the machine was offline still fires on wake if it is no more
+   * than this many minutes stale; otherwise it is recorded as a skipped run.
+   */
+  defaultMissedRunGraceMinutes: number
+  /** Kill a single run after this many minutes (0 = no timeout). Guards against a hung CLI. */
+  runTimeoutMinutes: number
 }
 
 /** Lifecycle of the in-app (assisted) updater, tracked at runtime — not persisted. */

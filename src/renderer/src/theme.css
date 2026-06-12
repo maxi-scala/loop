@@ -1083,6 +1083,124 @@ button {
   color: var(--red);
 }
 
+/* ── markdown (run summary + assistant messages) ────── */
+.md {
+  font-size: inherit;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0 0 8px;
+}
+.md ul,
+.md ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 2px 0;
+}
+.md li > ul,
+.md li > ol {
+  margin: 2px 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 15px;
+}
+.md h2 {
+  font-size: 14px;
+}
+.md h3 {
+  font-size: 13px;
+}
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 12px;
+}
+.md strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md a:hover {
+  text-decoration: underline;
+}
+.md code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--bg-raised);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.md pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--bg-window);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+}
+.md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.md blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-2);
+}
+.md table {
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border-subtle);
+  padding: 4px 8px;
+  text-align: left;
+}
+.md th {
+  color: var(--text);
+  font-weight: 600;
+}
+.tr-assistant .md {
+  font-size: 12px;
+}
+
 /* ── calendar ───────────────────────────────────────── */
 .cal-layout {
   display: grid;

@@ -36,6 +36,9 @@ function run(over: Partial<Run> = {}): Run {
 const settings = (over: Partial<Settings> = {}): Settings => ({
   daemonEnabled: false,
   pausedAll: false,
+  defaultPermissionMode: 'bypass',
+  defaultMissedRunGraceMinutes: 720,
+  runTimeoutMinutes: 60,
   ...over
 })
 

@@ -4,6 +4,7 @@ import type { RunStatus, Change, TranscriptEntry, Run, ModelId } from '@shared/t
 import { MODELS } from '@shared/schedule'
 import { fmtDur, fmtCost, fmtTokens } from '@shared/format'
 import { Icon, type IconName } from './lib/icons'
+import { Markdown } from './Markdown'
 
 export { Icon }
 export type { IconName }
@@ -13,6 +14,7 @@ export const STATUS_META: Record<string, { color: string; label: string }> = {
   success: { color: 'var(--green)', label: 'success' },
   failed: { color: 'var(--red)', label: 'failed' },
   running: { color: 'var(--accent)', label: 'running' },
+  skipped: { color: 'var(--text-3)', label: 'skipped' },
   paused: { color: 'var(--text-3)', label: 'paused' },
   scheduled: { color: 'var(--text-3)', label: 'scheduled' }
 }
@@ -226,7 +228,9 @@ export function Transcript({ entries }: { entries: TranscriptEntry[] }): React.J
               <span className="tr-mark" style={{ color: 'var(--accent)' }}>
                 ⏺
               </span>
-              <span className="tr-text">{e.text}</span>
+              <div className="tr-text">
+                <Markdown text={e.text || ''} />
+              </div>
             </div>
           )
         }

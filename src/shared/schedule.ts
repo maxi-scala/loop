@@ -1,11 +1,25 @@
 // shared/schedule.ts — schedule engine + natural-language parsing.
 // Ported faithfully from project/app/data.js (the design prototype).
-import type { Schedule, ModelMeta } from './types'
+import type { Schedule, ModelMeta, PermissionMode } from './types'
 
 export const MODELS: ModelMeta[] = [
   { id: 'sonnet', label: 'Sonnet', desc: 'Fast, balanced — good default' },
   { id: 'opus', label: 'Opus', desc: 'Most capable, slower' },
   { id: 'haiku', label: 'Haiku', desc: 'Cheapest, light tasks' }
+]
+
+export const PERMISSION_MODES: { id: PermissionMode; label: string; desc: string }[] = [
+  {
+    id: 'bypass',
+    label: 'Auto',
+    desc: 'Skip all permission prompts (--dangerously-skip-permissions)'
+  },
+  {
+    id: 'acceptEdits',
+    label: 'Auto-edit',
+    desc: 'Auto-accept file edits; prompt-gated tools are denied'
+  },
+  { id: 'default', label: 'Ask', desc: 'Deny anything needing approval — safest, may do nothing' }
 ]
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

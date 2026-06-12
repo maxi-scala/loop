@@ -26,6 +26,7 @@ type LoopState = {
   setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => Promise<void>
   setPausedAll: (paused: boolean) => Promise<void>
   setDaemonEnabled: (enabled: boolean) => Promise<void>
+  setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => Promise<void>
 
   applyUpdateStatus: (status: UpdateStatus) => void
   checkUpdate: () => Promise<void>
@@ -37,7 +38,13 @@ export const useStore = create<LoopState>((set, get) => ({
   routines: [],
   runs: [],
   tweaks: { accent: '#E8703F', layout: 'rows', density: 'comfortable' },
-  settings: { daemonEnabled: false, pausedAll: false },
+  settings: {
+    daemonEnabled: false,
+    pausedAll: false,
+    defaultPermissionMode: 'bypass',
+    defaultMissedRunGraceMinutes: 720,
+    runTimeoutMinutes: 60
+  },
   daemon: { installed: false, loaded: false },
   update: { phase: 'idle', info: null },
   loaded: false,
@@ -105,6 +112,10 @@ export const useStore = create<LoopState>((set, get) => ({
     const daemon = enabled ? await window.api.daemon.install() : await window.api.daemon.uninstall()
     const settings = await window.api.settings.set({ daemonEnabled: enabled })
     set({ daemon, settings })
+  },
+  setSetting: async (key, value) => {
+    const settings = await window.api.settings.set({ [key]: value })
+    set({ settings })
   },
 
   applyUpdateStatus: (update) => set({ update }),

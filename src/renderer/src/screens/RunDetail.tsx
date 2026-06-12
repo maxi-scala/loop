@@ -3,6 +3,7 @@
 import React from 'react'
 import { useStore } from '../store'
 import { ScreenHead, StatusBadge, Transcript, Icon, ModelChip, ChangeItem } from '../components'
+import { Markdown } from '../Markdown'
 import { fmtDateTime, fmtDur, fmtCost, fmtTokens } from '@shared/format'
 import type { ScreenProps, View } from '../views'
 
@@ -64,7 +65,9 @@ export function RunDetailScreen({
       <div className="run-detail-grid">
         <div className="panel">
           <div className="panel-label mono">summary</div>
-          <p className="run-summary-text">{run.summary}</p>
+          <div className="run-summary-text">
+            <Markdown text={run.summary} />
+          </div>
           {run.changes && run.changes.length > 0 ? (
             <div>
               <div className="panel-label mono" style={{ marginTop: 14 }}>

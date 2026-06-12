@@ -3,9 +3,16 @@
 import React from 'react'
 import { useStore } from '../store'
 import { Btn, Icon, Seg } from '../components'
-import { parseNL, scheduleToNL, describeSchedule, computeNextRun, MODELS } from '@shared/schedule'
+import {
+  parseNL,
+  scheduleToNL,
+  describeSchedule,
+  computeNextRun,
+  MODELS,
+  PERMISSION_MODES
+} from '@shared/schedule'
 import { fmtDateTime } from '@shared/format'
-import type { Routine, Schedule, ModelId } from '@shared/types'
+import type { Routine, Schedule, ModelId, PermissionMode } from '@shared/types'
 
 // Mon..Sun mapping to day indices, matching the prototype's ED_DAYS order.
 const ED_DAYS: { v: number; l: string }[] = [
@@ -35,6 +42,13 @@ export function Editor({
   const [prompt, setPrompt] = React.useState(routine ? routine.prompt : '')
   const [dir, setDir] = React.useState(routine ? routine.dir : '~')
   const [model, setModel] = React.useState<ModelId>(routine ? routine.model : 'sonnet')
+  // '' means "inherit the global default from Settings".
+  const [permissionMode, setPermissionMode] = React.useState<PermissionMode | ''>(
+    routine?.permissionMode ?? ''
+  )
+  const [grace, setGrace] = React.useState<string>(
+    routine?.missedRunGraceMinutes != null ? String(routine.missedRunGraceMinutes) : ''
+  )
   const [schedule, setSchedule] = React.useState<Schedule>(
     routine ? { ...routine.schedule } : { freq: 'daily', time: '09:00', days: [1], everyHours: 6 }
   )
@@ -88,7 +102,9 @@ export function Editor({
       prompt: prompt.trim(),
       dir: dir.trim() || '~',
       model,
-      schedule
+      schedule,
+      permissionMode: permissionMode || undefined,
+      missedRunGraceMinutes: grace.trim() === '' ? undefined : Math.max(0, +grace || 0)
     }
     await (routine
       ? updateRoutine({ ...routine, ...edits })
@@ -288,6 +304,44 @@ export function Editor({
               />
               <span className="field-hint">{modelDesc}</span>
             </div>
+          </div>
+
+          <div className="field-row">
+            <div className="field" style={{ flex: 1.6 }}>
+              <span className="field-label mono">permissions</span>
+              <Seg
+                value={permissionMode}
+                onChange={(v) => setPermissionMode(v as PermissionMode | '')}
+                options={[
+                  { value: '', label: 'Default' },
+                  ...PERMISSION_MODES.map((m) => ({ value: m.id, label: m.label }))
+                ]}
+              />
+              <span className="field-hint">
+                {permissionMode === ''
+                  ? 'Uses the default permission mode from Settings.'
+                  : PERMISSION_MODES.find((m) => m.id === permissionMode)?.desc}
+              </span>
+            </div>
+            <label className="field" style={{ flex: 1 }}>
+              <span className="field-label mono">catch-up window</span>
+              <div className="dir-wrap">
+                <input
+                  type="number"
+                  min={0}
+                  className="input mono"
+                  placeholder="default"
+                  value={grace}
+                  onChange={(e) => setGrace(e.target.value)}
+                />
+                <span className="mono dim" style={{ flexShrink: 0 }}>
+                  min
+                </span>
+              </div>
+              <span className="field-hint">
+                Blank uses the Settings default. How late a missed run may still fire.
+              </span>
+            </label>
           </div>
         </div>
 

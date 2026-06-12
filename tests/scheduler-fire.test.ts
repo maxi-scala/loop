@@ -131,4 +131,70 @@ describe('Scheduler.tick firing', () => {
     await sched.tick(now)
     expect(count).toBe(0)
   })
+
+  it('fires a run missed hours ago while within the (default 12h) grace window', async () => {
+    const now = new Date()
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600_000)
+    const store = fakeStore([dailyRoutine(hhmm(twoHoursAgo))])
+    let count = 0
+    const sched = new Scheduler(store as unknown as Store, {
+      execute: async () => {
+        count++
+      }
+    })
+    await sched.tick(now)
+    // 2h < default 720m grace → the occurrence missed while offline still fires on wake.
+    expect(count).toBe(1)
+  })
+
+  it('records a SKIPPED run (does not fire) when the miss is past the grace window', async () => {
+    const now = new Date()
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600_000)
+    // Tighten grace to 30m so a 2h-old occurrence is past it.
+    const store = fakeStore([dailyRoutine(hhmm(twoHoursAgo))], [], {
+      defaultMissedRunGraceMinutes: 30
+    })
+    let count = 0
+    const sched = new Scheduler(store as unknown as Store, {
+      execute: async () => {
+        count++
+      }
+    })
+    await sched.tick(now)
+    expect(count).toBe(0)
+    const runs = store._state.runs
+    expect(runs.length).toBe(1)
+    expect(runs[0].status).toBe('skipped')
+    expect(runs[0].scheduledFor).toBeTruthy()
+  })
+
+  it('does NOT record a second skipped run for the same missed occurrence', async () => {
+    const now = new Date()
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600_000)
+    const store = fakeStore([dailyRoutine(hhmm(twoHoursAgo))], [], {
+      defaultMissedRunGraceMinutes: 30
+    })
+    const sched = new Scheduler(store as unknown as Store, { execute: async () => {} })
+    await sched.tick(now)
+    await sched.tick(now)
+    expect(store._state.runs.filter((r) => r.status === 'skipped').length).toBe(1)
+  })
+
+  it('honors a per-routine grace override over the global default', async () => {
+    const now = new Date()
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600_000)
+    // Global grace is generous, but the routine pins a tight 30m window → skip.
+    const store = fakeStore([dailyRoutine(hhmm(twoHoursAgo), { missedRunGraceMinutes: 30 })], [], {
+      defaultMissedRunGraceMinutes: 1440
+    })
+    let count = 0
+    const sched = new Scheduler(store as unknown as Store, {
+      execute: async () => {
+        count++
+      }
+    })
+    await sched.tick(now)
+    expect(count).toBe(0)
+    expect(store._state.runs[0]?.status).toBe('skipped')
+  })
 })

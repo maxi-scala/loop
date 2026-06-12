@@ -4,14 +4,19 @@
 // tick that, on each pass, finds routines whose latest schedule occurrence is due and
 // not yet satisfied by an existing run, then dispatches them. Missed occurrences older
 // than the grace window are skipped (recorded implicitly by advancing past them).
-import type { Routine, Run } from '@shared/types'
+import type { Routine, Run, Settings } from '@shared/types'
 import { scheduleTimesForDay } from '@shared/schedule'
 import type { Store } from './persistence'
 import { runClaude, createRunningRun } from './claude-runner'
 
 const DEFAULT_TICK_MS = 60_000
-/** How late a scheduled occurrence may fire after its time before being skipped. */
-const GRACE_MS = 30 * 60 * 1000
+/**
+ * Fallback missed-run grace when Settings/routine don't specify one (minutes). Kept in
+ * sync with seed.ts defaultSettings. A scheduled occurrence missed while the machine was
+ * offline still fires on wake if it is no more than this stale; older ones are recorded
+ * as skipped. Resolution order: routine.missedRunGraceMinutes → Settings → this default.
+ */
+const DEFAULT_GRACE_MIN = 720
 /**
  * A run still marked "running" but older than this is considered dead (the process
  * that owned it exited without finishing). Such runs must NOT block future scheduling,
@@ -19,6 +24,13 @@ const GRACE_MS = 30 * 60 * 1000
  * check, which is why "manual works but scheduled never fires" shows up).
  */
 export const STALE_RUN_MS = 2 * 60 * 60 * 1000
+
+/** Resolve a routine's effective missed-run grace window in ms. */
+function graceMsFor(routine: Routine, settings: Settings): number {
+  const min =
+    routine.missedRunGraceMinutes ?? settings.defaultMissedRunGraceMinutes ?? DEFAULT_GRACE_MIN
+  return min * 60 * 1000
+}
 
 /** Find the most recent schedule occurrence at or before `now`, scanning back 14 days. */
 export function latestOccurrenceAtOrBefore(routine: Routine, now: Date): Date | null {
@@ -48,8 +60,11 @@ export type SchedulerOptions = {
 
 /** Execute a routine end-to-end: stream Claude output into the run record. */
 export async function executeRoutine(routine: Routine, run: Run, store: Store): Promise<void> {
+  const settings = store.getSettings()
+  const permissionMode = routine.permissionMode ?? settings.defaultPermissionMode ?? 'bypass'
+  const timeoutMs = (settings.runTimeoutMinutes ?? 0) * 60 * 1000
   const result = await runClaude(
-    { prompt: routine.prompt, dir: routine.dir, model: routine.model },
+    { prompt: routine.prompt, dir: routine.dir, model: routine.model, permissionMode, timeoutMs },
     {
       onTranscript: (_entry, all) => {
         store.updateRun(run.id, { transcript: all })
@@ -111,35 +126,45 @@ export class Scheduler {
     }
     const routines = this.store.listRoutines().filter((r) => r.enabled)
     const fired: string[] = []
+    let changed = false
     for (const routine of routines) {
-      if (this.shouldFire(routine, now)) {
+      const action = this.evaluate(routine, now, settings)
+      if (action === 'fire') {
         fired.push(routine.id)
+        changed = true
         void this.dispatch(routine, now)
+      } else if (action === 'skip') {
+        this.recordSkipped(routine, now, settings)
+        changed = true
       }
     }
-    if (fired.length) {
+    if (changed) {
       this.onFire?.(fired)
     }
     return fired
   }
 
-  private shouldFire(routine: Routine, now: Date): boolean {
+  /**
+   * Decide what to do with a routine this tick:
+   *  - 'fire' : its latest occurrence is due and within the grace window
+   *  - 'skip' : its latest occurrence is past the grace window (missed while offline)
+   *  - 'none' : nothing to do (no occurrence, already satisfied, or genuinely running)
+   * Only the single latest occurrence is ever acted on — missed runs are not replayed
+   * one-per-hour; this mirrors orca's run_once_within_grace policy.
+   */
+  private evaluate(routine: Routine, now: Date, settings: Settings): 'fire' | 'skip' | 'none' {
     if (this.inFlight.has(routine.id)) {
-      return false
+      return 'none'
     }
     const occ = latestOccurrenceAtOrBefore(routine, now)
     if (!occ) {
-      return false
-    }
-    // Skip occurrences older than the grace window.
-    if (now.getTime() - occ.getTime() > GRACE_MS) {
-      return false
+      return 'none'
     }
     const occIso = occ.toISOString()
     const runs = this.store.listRuns(routine.id)
-    // Already satisfied this occurrence?
+    // Already satisfied this occurrence (fired, skipped, or recorded)?
     if (runs.some((r) => r.scheduledFor === occIso)) {
-      return false
+      return 'none'
     }
     // Don't pile onto a run that is genuinely still in progress, but ignore stale
     // "running" rows left behind by a crashed/quit process so they can't wedge us.
@@ -148,9 +173,37 @@ export class Scheduler {
         (r) => r.status === 'running' && now.getTime() - new Date(r.start).getTime() < STALE_RUN_MS
       )
     ) {
-      return false
+      return 'none'
     }
-    return true
+    // Past the grace window → the machine was offline too long; record a skip instead
+    // of silently dropping it, so the gap is visible in history/calendar.
+    if (now.getTime() - occ.getTime() > graceMsFor(routine, settings)) {
+      return 'skip'
+    }
+    return 'fire'
+  }
+
+  /** Record a missed occurrence as a skipped run so it's deduped and visible in history. */
+  private recordSkipped(routine: Routine, now: Date, settings: Settings): void {
+    const occ = latestOccurrenceAtOrBefore(routine, now)
+    if (!occ) {
+      return
+    }
+    const graceMin = Math.round(graceMsFor(routine, settings) / 60000)
+    const run = createRunningRun(routine.id, routine.prompt, routine.dir, 'scheduled')
+    run.status = 'skipped'
+    run.scheduledFor = occ.toISOString()
+    run.durationSec = 0
+    run.summary = `Skipped — Loop was offline at the scheduled time and the ${graceMin}-minute catch-up window had passed.`
+    run.transcript = [
+      {
+        role: 'result',
+        text: `Missed scheduled occurrence ${run.scheduledFor}; not run.`,
+        err: true
+      }
+    ]
+    this.store.addRun(run)
+    this.log(`skip ${routine.name} (${routine.id}) missed occurrence ${run.scheduledFor}`)
   }
 
   private async dispatch(routine: Routine, now: Date): Promise<void> {
